@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Gólová mapa - Globus (více hráčů)</title>
+<style>
+  html, body { margin:0; padding:0; background:#000; overflow:hidden; font-family: sans-serif; color:#fff; height:100%; }
+  #ui {
+    position:absolute; top:0; left:0; right:0; z-index:10;
+    background:rgba(10,10,20,0.9); padding:10px; box-sizing:border-box;
+    max-height:55vh; overflow-y:auto;
+  }
+  #ui h2 { margin:4px 0; font-size:16px; }
+  #ui label { display:block; font-size:12px; margin-top:6px; }
+  #ui input, #ui select { width:100%; padding:6px; margin-top:2px; box-sizing:border-box; border-radius:6px; border:none; font-size:14px; }
+  #ui button { margin-top:8px; padding:8px 12px; border-radius:8px; border:none; background:#e63946; color:#fff; font-weight:bold; font-size:14px; }
+  #playerList { font-size:12px; margin-top:8px; max-height:150px; overflow-y:auto; background:rgba(255,255,255,0.05); padding:4px; border-radius:6px; }
+  .playerBlock { border-bottom:1px solid rgba(255,255,255,0.15); padding:4px 2px; }
+  .playerBlock b { color: var(--c); }
+  .goalItem { display:flex; justify-content:space-between; padding:1px 4px; font-size:11px; }
+  .goalItem span.rm { color:#ff8888; cursor:pointer; }
+  .rmPlayer { color:#ff8888; cursor:pointer; float:right; }
+  #globeViz { position:absolute; top:0; bottom:0; left:0; right:0; }
+  #toggleUI { position:absolute; top:10px; right:10px; z-index:20; background:#333; color:#fff; border:none; border-radius:50%; width:34px; height:34px; }
+  .colorDot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <h2>⚽ Gólová mapa - více hráčů/týmů</h2>
+
+  <label>Jméno hráče / týmu (např. Robert Lewandowski, Sparta)</label>
+  <input id="playerName" type="text" placeholder="Robert Lewandowski">
+
+  <label>Domovské město / klub</label>
+  <select id="homeCity"></select>
+
+  <label>Barva na globusu</label>
+  <select id="playerColor">
+    <option value="#ffd60a">Žlutá</option>
+    <option value="#e63946">Červená</option>
+    <option value="#2a9d8f">Zelená</option>
+    <option value="#457b9d">Modrá</option>
+    <option value="#f4a261">Oranžová</option>
+    <option value="#c77dff">Fialová</option>
+  </select>
+
+  <button onclick="addPlayer()">➕ Přidat hráče/tým</button>
+
+  <label>Přidat gól ke hráči</label>
+  <select id="playerSelect"></select>
+  <select id="goalCity"></select>
+  <button onclick="addGoal()">➕ Přidat gól</button>
+
+  <div id="playerList"></div>
+
+  <button onclick="startAnimation()">🚀 Spustit animaci (postupně)</button>
+  <button onclick="startAnimationAll()" style="background:#f4a261;">⚡ Spustit vše najednou</button>
+  <button onclick="resetAll()" style="background:#457b9d;">🔄 Reset</button>
+</div>
+
+<button id="toggleUI" onclick="toggleUI()">☰</button>
+
+<div id="globeViz"></div>
+
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script src="https://unpkg.com/globe.gl"></script>
+<script>
+const CITIES = [
+  {name:"Praha (Sparta/Slavia)", lat:50.0755, lng:14.4378},
+  {name:"Mnichov (Bayern)", lat:48.1188, lng:11.6247},
+  {name:"Dortmund (Borussia)", lat:51.4930, lng:7.4517},
+  {name:"Varšava (Legia)", lat:52.2298, lng:21.0122},
+  {name:"Barcelona", lat:41.3809, lng:2.1228},
+  {name:"Madrid (Real)", lat:40.4530, lng:-3.6883},
+  {name:"Londýn (Chelsea/Arsenal)", lat:51.5074, lng:-0.1278},
+  {name:"Manchester", lat:53.4831, lng:-2.2004},
+  {name:"Liverpool", lat:53.4308, lng:-2.9608},
+  {name:"Paříž (PSG)", lat:48.8414, lng:2.2530},
+  {name:"Turín (Juventus)", lat:45.1096, lng:7.6413},
+  {name:"Milán (AC/Inter)", lat:45.4781, lng:9.1240},
+  {name:"Řím (AS Řím)", lat:41.9339, lng:12.4547},
+  {name:"Amsterdam (Ajax)", lat:52.3143, lng:4.9419},
+  {name:"Lisabon (Benfica)", lat:38.7527, lng:-9.1846},
+  {name:"Porto", lat:41.1620, lng:-8.5910},
+  {name:"Berlín", lat:52.5145, lng:13.2394},
+  {name:"Vídeň", lat:48.1901, lng:16.4177},
+  {name:"Kodaň", lat:55.6721, lng:12.5726},
+  {name:"Moskva", lat:55.7887, lng:37.5544},
+  {name:"Istanbul", lat:41.1039, lng:28.9977},
+  {name:"Rio de Janeiro", lat:-22.9121, lng:-43.2302},
+  {name:"Buenos Aires", lat:-34.6455, lng:-58.4498},
+  {name:"New York", lat:40.7128, lng:-74.0060},
+  {name:"Tokio", lat:35.6762, lng:139.6503},
+  {name:"Doha (Katar)", lat:25.2760, lng:51.5200},
+  {name:"Bukurešť", lat:44.4362, lng:26.0873},
+  {name:"Kyjev", lat:50.4501, lng:30.5234},
+  {name:"Glasgow", lat:55.8642, lng:-4.2518},
+  {name:"Sevilla", lat:37.3891, lng:-5.9845}
+];
+
+function fillSelect(sel) {
+  sel.innerHTML='';
+  CITIES.forEach((c,i)=>{
+    const o=document.createElement('option');
+    o.value=i; o.textContent=c.name;
+    sel.appendChild(o);
+  });
+}
+fillSelect(document.getElementById('homeCity'));
+fillSelect(document.getElementById('goalCity'));
+
+let players = [];
+
+function refreshPlayerSelect(){
+  const sel = document.getElementById('playerSelect');
+  sel.innerHTML = players.map((p,i)=>`<option value="${i}">${p.name}</option>`).join('');
+}
+
+function renderPlayerList(){
+  const el = document.getElementById('playerList');
+  el.innerHTML = players.map((p,pi)=>`
+    <div class="playerBlock">
+      <span class="colorDot" style="background:${p.color}"></span><b style="color:${p.color}">${p.name}</b> (${CITIES[p.home].name})
+      <span class="rmPlayer" onclick="removePlayer(${pi})">✕</span>
+      ${p.goals.map((g,gi)=>`<div class="goalItem"><span>• gól: ${CITIES[g].name}</span><span class="rm" onclick="removeGoal(${pi},${gi})">✕</span></div>`).join('')}
+    </div>
+  `).join('');
+}
+
+function addPlayer(){
+  const name = document.getElementById('playerName').value.trim();
+  if(!name){ alert('Zadej jméno hráče nebo týmu!'); return; }
+  const home = parseInt(document.getElementById('homeCity').value);
+  const color = document.getElementById('playerColor').value;
+  players.push({name, home, color, goals:[]});
+  document.getElementById('playerName').value='';
+  refreshPlayerSelect();
+  renderPlayerList();
+}
+function removePlayer(i){ players.splice(i,1); refreshPlayerSelect(); renderPlayerList(); }
+
+function addGoal(){
+  if(players.length===0){ alert('Nejdřív přidej hráče/tým!'); return; }
+  const pIdx = parseInt(document.getElementById('playerSelect').value);
+  const cIdx = parseInt(document.getElementById('goalCity').value);
+  players[pIdx].goals.push(cIdx);
+  renderPlayerList();
+}
+function removeGoal(pi,gi){ players[pi].goals.splice(gi,1); renderPlayerList(); }
+
+function resetAll(){
+  players=[]; refreshPlayerSelect(); renderPlayerList();
+  globe.arcsData([]).pointsData([]);
+  globe.pointOfView({lat:20, lng:0, altitude:2.5}, 1000);
+}
+function toggleUI(){
+  const ui=document.getElementById('ui');
+  ui.style.display = (ui.style.display==='none')?'block':'none';
+}
+
+const globe = Globe()
+  (document.getElementById('globeViz'))
+  .globeImageUrl('//unpkg.com/three-globe/example/img/earth-night.jpg')
+  .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
+  .backgroundImageUrl('//unpkg.com/three-globe/example/img/night-sky.png')
+  .arcColor('color')
+  .arcDashLength(0.5)
+  .arcDashGap(0.3)
+  .arcDashAnimateTime(1800)
+  .arcStroke(0.6)
+  .arcAltitudeAutoScale(0.4)
+  .pointColor('color')
+  .pointAltitude(0.01)
+  .pointRadius(0.35)
+  .pointLabel('label');
+
+globe.pointOfView({lat:20, lng:0, altitude:2.5}, 0);
+
+function startAnimation(){
+  if(players.length===0){ alert('Přidej aspoň jednoho hráče s góly!'); return; }
+  globe.arcsData([]); globe.pointsData([]);
+
+  const allArcs = [];
+  const allPoints = [];
+  players.forEach(p=> allPoints.push({lat:CITIES[p.home].lat, lng:CITIES[p.home].lng, label:`${p.name} (domov)`, color:p.color}));
+  globe.pointsData(allPoints);
+
+  const firstHome = CITIES[players[0].home];
+  globe.pointOfView({lat:firstHome.lat, lng:firstHome.lng, altitude:1.6}, 1500);
+
+  let queue = [];
+  players.forEach(p=>{
+    const home = CITIES[p.home];
+    p.goals.forEach(gIdx=>{
+      const dest = CITIES[gIdx];
+      queue.push({startLat:home.lat, startLng:home.lng, endLat:dest.lat, endLng:dest.lng, color:p.color, label:`${p.name}: gól v ${dest.name}`, destLabel:dest.name, destLat:dest.lat, destLng:dest.lng, playerColor:p.color, playerName:p.name});
+    });
+  });
+
+  let i=0;
+  function step(){
+    if(i>=queue.length){
+      setTimeout(()=> globe.pointOfView({lat:20, lng:0, altitude:2.7}, 2500), 800);
+      return;
+    }
+    const arc = queue[i];
+    allArcs.push(arc);
+    globe.arcsData([...allArcs]);
+    allPoints.push({lat:arc.destLat, lng:arc.destLng, label:arc.label, color:arc.playerColor});
+    globe.pointsData([...allPoints]);
+    globe.pointOfView({lat:(arc.startLat+arc.destLat)/2, lng:(arc.startLng+arc.destLng)/2, altitude:2}, 1200);
+    i++;
+    setTimeout(step, 2000);
+  }
+  step();
+}
+
+function startAnimationAll(){
+  if(players.length===0){ alert('Přidej aspoň jednoho hráče s góly!'); return; }
+  globe.arcsData([]); globe.pointsData([]);
+
+  const arcs = [];
+  const points = [];
+  players.forEach(p=>{
+    const home = CITIES[p.home];
+    points.push({lat:home.lat, lng:home.lng, label:`${p.name} (domov)`, color:p.color});
+    p.goals.forEach(gIdx=>{
+      const dest = CITIES[gIdx];
+      arcs.push({startLat:home.lat, startLng:home.lng, endLat:dest.lat, endLng:dest.lng, color:p.color, label:`${p.name}: gól v ${dest.name}`});
+      points.push({lat:dest.lat, lng:dest.lng, label:`${p.name}: gól v ${dest.name}`, color:p.color});
+    });
+  });
+
+  globe.pointOfView({lat:20, lng:0, altitude:2}, 1000);
+  setTimeout(()=>{
+    globe.arcsData(arcs);
+    globe.pointsData(points);
+    setTimeout(()=> globe.pointOfView({lat:20, lng:0, altitude:2.7}, 2500), 2200);
+  }, 1000);
+}
+</script>
+</body>
+</html>
